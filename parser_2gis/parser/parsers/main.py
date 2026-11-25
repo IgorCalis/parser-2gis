@@ -4,6 +4,8 @@ import base64
 import json
 import re
 import urllib.parse
+
+import pychrome
 from typing import TYPE_CHECKING, Optional
 
 from ...chrome import ChromeRemote
@@ -202,10 +204,15 @@ class MainParser:
             if not walk_page_number:
                 # Iterate through gathered links
                 for link in links:
+                    resp = None
                     for _ in range(3):  # 3 attempts to get response
                         # Click the link to provoke request
                         # with a auth key and secret arguments
-                        self._chrome_remote.perform_click(link)
+                        try:
+                            self._chrome_remote.perform_click(link)
+                        except pychrome.CallMethodException as exc:
+                            logger.error('Ошибка DOM при обработке %s: %s. Выгрузка неполная; остановка.', link.attributes.get('href'), exc)
+                            raise
 
                         # Delay between clicks, could be usefull if
                         # 2GIS's anti-bot service become more strict.
@@ -225,7 +232,7 @@ class MainParser:
 
                         try:
                             doc = json.loads(data)
-                        except json.JSONDecodeError:
+                        except (json.JSONDecodeError, TypeError):
                             logger.error('Сервер вернул некорректный JSON документ: "%s", пропуск позиции.', data)
                             doc = None
                     else:
