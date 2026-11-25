@@ -356,7 +356,20 @@ class ChromeRemote:
         Args:
             dom_node: DOMNode element.
         """
-        resolved_node = self._chrome_tab.DOM.resolveNode(backendNodeId=dom_node.backend_id, _timeout=timeout)
+        # A DOM snapshot can become stale when a framework rerenders an anchor.
+        # Reacquire only the exact original href; never click an unrelated node.
+        href = dom_node.attributes.get('href')
+        try:
+            resolved_node = self._chrome_tab.DOM.resolveNode(backendNodeId=dom_node.backend_id, _timeout=timeout)
+        except pychrome.CallMethodException as exc:
+            if not href or 'No node with given id found' not in str(exc):
+                raise
+            matches = self.get_document().search(
+                lambda node: node.local_name == 'a' and node.attributes.get('href') == href
+            )
+            if len(matches) != 1:
+                raise
+            resolved_node = self._chrome_tab.DOM.resolveNode(backendNodeId=matches[0].backend_id, _timeout=timeout)
         object_id = resolved_node['object']['objectId']
         self._chrome_tab.Runtime.callFunctionOn(objectId=object_id, functionDeclaration='''
             (function() { this.scrollIntoView({ block: "center",  behavior: "instant" }); this.click(); })
