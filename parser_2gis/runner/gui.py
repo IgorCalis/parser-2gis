@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import threading
+import json
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ..exceptions import ChromeRuntimeException, ChromeUserAbortException
@@ -56,6 +58,7 @@ class GUIRunner(AbstractRunner, threading.Thread):
 
     def run(self) -> None:
         """Thread's activity."""
+        failures = []
         with get_writer(self._output_path, self._format, self._config.writer) as writer:
             for url in self._urls:
                 try:
@@ -68,6 +71,7 @@ class GUIRunner(AbstractRunner, threading.Thread):
                     if not self._cancelled:
                         self._parser.parse(writer)
                 except Exception as e:
+                    failures.append({'url': url, 'error_type': type(e).__name__})
                     if not self._cancelled:  # Don't catch intended exceptions caused by stopping parser
                         if isinstance(e, ChromeRuntimeException) and str(e) == 'Tab has been stopped':
                             logger.error('Вкладка браузера была закрыта.')
@@ -81,4 +85,15 @@ class GUIRunner(AbstractRunner, threading.Thread):
                     if self._cancelled:
                         break
 
-        logger.info('Парсинг завершён.')
+        status = 'cancelled' if self._cancelled else ('partial' if failures else 'finished_unverified')
+        report = Path(str(self._output_path) + '.status.json')
+        try:
+            report.write_text(json.dumps({'status': status, 'failures': failures, 'output': str(self._output_path)}, ensure_ascii=False, indent=2), encoding='utf-8')
+        except OSError:
+            logger.error('Не удалось сохранить статус выгрузки.', exc_info=True)
+        if status == 'partial':
+            logger.error('Выгрузка НЕПОЛНАЯ. Полученные записи сохранены, не используйте файл как полный реестр.')
+        elif status == 'cancelled':
+            logger.info('Выгрузка отменена пользователем.')
+        else:
+            logger.info('Парсинг завершён. Полнота выгрузки не подтверждена.')
