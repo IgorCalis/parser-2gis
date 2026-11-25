@@ -1,0 +1,37 @@
+name: AC Windows build
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'parser_2gis/**'
+      - 'setup.py'
+      - '.github/workflows/windows-build.yml'
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[gui,dev]"
+      - name: Check syntax
+        run: python -m compileall -q parser_2gis
+      - name: Build
+        run: python setup.py build_standalone
+      - name: Verify binary
+        shell: pwsh
+        run: |
+          if (!(Test-Path dist/Parser2GIS.exe)) { throw "EXE missing" }
+          Get-FileHash dist/Parser2GIS.exe -Algorithm SHA256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AC-GeoParser-Windows
+          path: dist/Parser2GIS.exe
+          if-no-files-found: error
